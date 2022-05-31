@@ -21,15 +21,18 @@ library(plotly)
 ## Download SNOTEL
 
 # # Test SNOTEL Data Download/Save
-snotel_test <- snotel_download(site_id = c(551, 670, 703), internal = TRUE)
+snotel_test <- snotel_download(site_id = c(551, 301, 901), internal = TRUE)
+# 
+# save(snotel_test, file = "data/snotel_test.RData")
+
 # 
 # write.csv(snotel_551, "data/snotel_551.csv")
 # 
 # # Colorado SNOTEL Data
-site_meta_data_co <- snotel_info() %>%
-  filter(state == "CO")
-# 
-mapview(site_meta_data_co, ycol = "latitude", xcol = "longitude", crs = 4326, grid = FALSE)
+# site_meta_data_co <- snotel_info() %>%
+#   filter(state == "CO")
+# # 
+# mapview(site_meta_data_co, ycol = "latitude", xcol = "longitude", crs = 4326, grid = FALSE)
 # 
 # co_snow_data <- snotel_download(site_id = site_meta_data_co$site_id, internal = TRUE)
 # 
@@ -45,50 +48,31 @@ mapview(site_meta_data_co, ycol = "latitude", xcol = "longitude", crs = 4326, gr
 # 
 # write.csv(cont_snow_data, "data/snotel_cont.csv")
 
-## Import data from .csv
-cont_snow_data <- read.csv("data/snotel_cont.csv")
+
 ```
 
 ```{r, fig.width=12,fig.height=7}
-## Import data from .csv
-cont_snow_data <- read.csv("data/snotel_cont.csv")
+## Import data from .RData
+load("data/cont_snotel.RData")
 
-# SNOTEL Analysis
-cont_snow_data_spring <- cont_snow_data %>%
+# SNOTEL Analysis, calculate the number and amount of positive SWE between 
+cont_snotel_spring <- cont_snow_data %>%
   mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
-  filter(state != "SD", year >= 1979, ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244)) %>%
-  mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0))
-
-# Summarize the new snow fall events by state
-snotel_state <- cont_snow_data_spring %>%
-  group_by(state, year) %>%
-  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), n = length(unique(site_id)), newsnow_site = newsnow_days/n)
-# 
-# spring_snow_state <- ggplot(snotel_state) +
-#   geom_line(aes(x = year, y= newsnow_site, color = state))
-# 
-# ggplotly(spring_snow_state)
-
-# Summarize the new snow fall events by site
-snotel_sites <- cont_snow_data_spring %>%
-  group_by(site_id, site_name, year, state) %>%
-  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE))
-
-# spring_snow_state <- ggplot(snotel_sites) +
-#   geom_line(aes(x = year, y= newsnow_days, color = state))
-# 
-# ggplotly(spring_snow_state)
+  mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= 1979, ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244))
 
 # Determine average number of days with increased SWE per spring
-cont_snotel_site <- cont_snow_data_spring %>%
+cont_snotel_site <- cont_snotel_spring %>%
   group_by(site_id, site_name, state, latitude, longitude, elev) %>%
-  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), years = length(unique(year)), avg_spring_days = newsnow_days/years)
-  
+  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), years = length(unique(year)), avg_spring_days = newsnow_days/years, newsnow_depth = sum(newsnow, na.rm = TRUE), avg_spring_snow = newsnow_depth/years, norm_spring_snow = avg_spring_snow/911.8571)
+
 mapview(cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_days", crs = 4326, grid = FALSE)
 
-cont_snotel_site_yr <- cont_snow_data_spring %>%
+mapview(cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_snow", crs = 4326, grid = FALSE)
+
+cont_snotel_site_yr <- cont_snotel_spring %>%
   group_by(site_id, site_name, state, year, latitude, longitude, elev) %>%
-  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE))
+  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), newsnow_depth = sum(newsnow, na.rm = TRUE))
 
 spring_snow_days <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_days, color = state)) +
   geom_boxplot()+
@@ -96,21 +80,42 @@ spring_snow_days <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_days, 
 
 ggplotly(spring_snow_days)
 
-# Testing things
-# test_snow_data <- snotel_test %>%
-#   mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date))
-# 
-# test_spring <- test_snow_data %>%
-#   filter(ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244)) %>%
-#   mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0))
-# 
-# site_stats <- test_spring %>%
-#   group_by(site_id, site_name, state, county, latitude, longitude, year) %>%
-#   summarise(day_SN = sum(newsnow>0, na.rm = TRUE))
-# 
-# ggplot(site_stats) +
-#   geom_line(aes(x = year, y= day_SN, color = site_name))
+spring_snow_depth <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_depth, color = state)) +
+  geom_boxplot()+
+  ggtitle("")
 
+ggplotly(spring_snow_depth)
+
+# spring_snow_days_yr <- ggplot(cont_snotel_site_yr, aes(x = year, y = newsnow_days, group = state, color = state)) + 
+#   geom_line()
+# 
+# ggplotly(spring_snow_days_yr)
 ```
 
+```{r, echo=FALSE, eval=FALSE}
+# Testing things
+test_snow_data <- snotel_test %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date))
+
+test_spring <- test_snow_data %>%
+  filter(ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244)) %>%
+  mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0))
+
+site_stats <- test_spring %>%
+  group_by(site_id, site_name, state, county, latitude, longitude, year) %>%
+  summarise(day_SN = sum(newsnow>0, na.rm = TRUE))
+
+ggplot(site_stats) +
+  geom_line(aes(x = year, y= day_SN, color = site_name))
+
+state_year_plot <- ggplot(cont_snotel_site_yr, aes(x = year, y = newsnow_days, group = state, color = state)) +
+  geom_line()
+
+ggplotly(state_year_plot)
+
+site_year_plot <- cont_snotel_site_yr %>% group_by(site_id) %>% do(plots=ggplot(data=.) +
+         aes(x=year, y=newsnow_days) + geom_line() + ggtitle(unique(.$site_name)))
+
+site_year_plot[[2]]
+```
 
