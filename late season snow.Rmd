@@ -8,6 +8,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
@@ -15,13 +16,14 @@ library(snotelr)
 library(mapview)
 library(lubridate)
 library(plotly)
+library(sf)
 ```
 
 ```{r, eval=FALSE, echo=FALSE}
 ## Download SNOTEL
 
 # # Test SNOTEL Data Download/Save
-snotel_test <- snotel_download(site_id = c(551, 301, 901), internal = TRUE)
+#snotel_test <- snotel_download(site_id = c(551, 301, 901), internal = TRUE)
 # 
 # save(snotel_test, file = "data/snotel_test.RData")
 
@@ -47,13 +49,44 @@ snotel_test <- snotel_download(site_id = c(551, 301, 901), internal = TRUE)
 # cont_snow_data <- snotel_download(site = site_meta_data_cont$site_id, internal = TRUE)
 # 
 # write.csv(cont_snow_data, "data/snotel_cont.csv")
-
-
 ```
 
-```{r, fig.width=12,fig.height=7}
+```{r}
 ## Import data from .RData
 load("data/cont_snotel.RData")
+
+# Import seasonal snow zone polygons
+SSZ <- st_read('data/MODIS_Snow_Zones/SSZ_0cc.shp')
+PSZ <- st_read('data/MODIS_Snow_Zones/PSZ_0cc.shp')
+```
+
+```{r}
+# Group sites by site_id
+cont_snotel_site <- cont_snow_data %>%
+  group_by(site_id, site_name, state, latitude, longitude, elev) %>%
+  summarise()
+
+# transform files to CRS:4326
+snotel_sites <- st_as_sf(cont_snotel_site, coords = c('longitude', 'latitude'), crs = 4326) #fix before next run
+PSZ_4326 <- st_transform(PSZ, crs = 4326)
+
+# clip SNOTEL Sites to PSZ
+sf::sf_use_s2(FALSE)
+PSZ_snotel_sites = st_intersection(PSZ_4326, snotel_sites)
+
+mapview(PSZ_snotel_sites) + 
+  mapview(PSZ_4326)
+```
+
+```{r}
+# Filter all SNOTEL to PSZ SNOTEL Sites Only
+PSZ_cont_snotel <- cont_snow_data[cont_snow_data$site_id %in% PSZ_snotel_sites$site_id,]
+
+# PSZ SNOTEL Site, Calculate spring days with new SWE and new SWE depth 
+PSZ_cont_snotel_spring <- PSZ_cont_snotel %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
+  mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= 1979, ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244))
 
 # SNOTEL Analysis, calculate the number and amount of positive SWE between 
 cont_snotel_spring <- cont_snow_data %>%
@@ -61,36 +94,72 @@ cont_snotel_spring <- cont_snow_data %>%
   mutate(newsnow = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
   filter(state != "SD", year >= 1979, ifelse(leap_year(year) == FALSE, yday >= 60 & yday <= 243, yday >= 61 & yday <= 244))
 
-# Determine average number of days with increased SWE per spring
+# PSZ determine average number of days with increased SWE per spring at each site
+PSZ_cont_snotel_site <- PSZ_cont_snotel_spring %>%
+  group_by(site_id, site_name, state, latitude, longitude, elev) %>%
+  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), years = length(unique(year)), avg_spring_days = newsnow_days/years, 
+            newsnow_depth = sum(newsnow, na.rm = TRUE), avg_spring_snow = newsnow_depth/years)
+
+# Determine average number of days with increased SWE per spring at each site
 cont_snotel_site <- cont_snotel_spring %>%
   group_by(site_id, site_name, state, latitude, longitude, elev) %>%
-  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), years = length(unique(year)), avg_spring_days = newsnow_days/years, newsnow_depth = sum(newsnow, na.rm = TRUE), avg_spring_snow = newsnow_depth/years, norm_spring_snow = avg_spring_snow/911.8571)
+  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), years = length(unique(year)), avg_spring_days = newsnow_days/years, 
+            newsnow_depth = sum(newsnow, na.rm = TRUE), avg_spring_snow = newsnow_depth/years)
 
-mapview(cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_days", crs = 4326, grid = FALSE)
+# View data
+mapview(cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_days",
+        layer.name = "AVG Sping Days (All Sites)" ,crs = 4326, grid = FALSE) + 
+  mapview(PSZ_cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_days",
+        layer.name = "AVG Sping Days (PSZ Sites)" , crs = 4326, grid = FALSE)
+```
 
-mapview(cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "avg_spring_snow", crs = 4326, grid = FALSE)
-
+```{r, fig.width=12,fig.height=7}
+# Days of new snow at SNOTEL Sites in Western US
+#Summarize the number of new SWE days and SWE depth at all sites per year
 cont_snotel_site_yr <- cont_snotel_spring %>%
   group_by(site_id, site_name, state, year, latitude, longitude, elev) %>%
   summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), newsnow_depth = sum(newsnow, na.rm = TRUE))
 
+# Create a box plot for all sites
 spring_snow_days <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_days, color = state)) +
   geom_boxplot()+
   ggtitle("Days of increased SWE at all sites (1978-2022)")
-
 ggplotly(spring_snow_days)
 
+#Summarize the number of new SWE days and SWE depth at PSZ sites per year
+PSZ_cont_snotel_site_yr <- PSZ_cont_snotel_spring %>%
+  group_by(site_id, site_name, state, year, latitude, longitude, elev) %>%
+  summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), newsnow_depth = sum(newsnow, na.rm = TRUE))
+
+# Create a box plot for all sites
+PSZ_spring_snow_days <- ggplot(PSZ_cont_snotel_site_yr, aes(x = state, y= newsnow_days, color = state)) +
+  geom_boxplot()+
+  ggtitle("Days of increased SWE at PSZ sites (1978-2022)")
+ggplotly(PSZ_spring_snow_days)
+```
+
+```{r, fig.width=12,fig.height=7}
+# Spring Snow depth
 spring_snow_depth <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_depth, color = state)) +
   geom_boxplot()+
-  ggtitle("")
-
+  ggtitle("Depth of increased SWE at all sites (1978-2022)")
 ggplotly(spring_snow_depth)
+
+# Spring Snow depth
+PSZ_spring_snow_depth <- ggplot(PSZ_cont_snotel_site_yr, aes(x = state, y= newsnow_depth, color = state)) +
+  geom_boxplot()+
+  ggtitle("Depth of increased SWE at PSZ sites (1978-2022)")
+ggplotly(PSZ_spring_snow_depth)
+
 
 # spring_snow_days_yr <- ggplot(cont_snotel_site_yr, aes(x = year, y = newsnow_days, group = state, color = state)) + 
 #   geom_line()
 # 
 # ggplotly(spring_snow_days_yr)
 ```
+
+
+
 
 ```{r, echo=FALSE, eval=FALSE}
 # Testing things
