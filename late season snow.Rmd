@@ -131,18 +131,56 @@ PSZ_cont_snotel_site_yr <- PSZ_cont_snotel_spring %>%
   group_by(site_id, site_name, state, year, latitude, longitude, elev) %>%
   summarise(newsnow_days = sum(newsnow>0, na.rm = TRUE), newsnow_depth = sum(newsnow, na.rm = TRUE))
 
-# Create a box plot for all sites
+# Create a boxplot for all sites
 PSZ_spring_snow_days <- ggplot(PSZ_cont_snotel_site_yr, aes(x = state, y= newsnow_days, color = state)) +
   geom_boxplot()+
   ggtitle("Days of increased SWE at PSZ sites (1978-2022)")
 ggplotly(PSZ_spring_snow_days)
 ```
 
+```{r}
+summary(cont_snotel_site_yr$elev)
+hist(cont_snotel_site_yr$elev)
+
+cont_snotel_site_yr <- cont_snotel_site_yr %>% 
+  mutate(elev_band = ifelse(elev >= 2000, "High (>=2500)", 
+                            ifelse(elev < 2000 & elev >= 1200, "Mid (1500-2500)", "Low (<= 1500)")))
+```
+
+```{r}
+# Elevation vs new snow count
+elev_newsnow <- plot_ly(cont_snotel_site, x = ~avg_spring_days, y = ~elev, color = ~state, type = 'scatter', mode = 'markers', 
+                        hoverinfo = 'text',
+                        text = ~paste('</br> avg_new_days: ', avg_spring_days,
+                                      '</br> elev: ', elev,
+                                      '</br> site_name: ', site_name,
+                                      '</br> state: ', state)) %>% 
+  layout(title = "Average Increased SWE Days by Elevation")
+ 
+elev_newsnow
+
+elev_newsnow_depth <- plot_ly(cont_snotel_site, x = ~avg_spring_snow, y = ~elev, color = ~state, type = 'scatter', mode = 'markers', 
+                        hoverinfo = 'text',
+                        text = ~paste('</br> avg_new_snow: ', avg_spring_snow,
+                                      '</br> elev: ', elev,
+                                      '</br> site_name: ', site_name,
+                                      '</br> state: ', state)) %>% 
+  layout(title = "Average Increased SWE Days by Elevation")
+ 
+elev_newsnow_depth
+
+elev_boxplot <- ggplot(cont_snotel_site_yr, aes(x = elev_band, y= newsnow_days, color = elev_band)) +
+  geom_boxplot()+
+  ggtitle("New Snow Events by Elevation")
+ggplotly(elev_boxplot)
+```
+
+
 ```{r, fig.width=12,fig.height=7}
 # Spring Snow depth
 spring_snow_depth <- ggplot(cont_snotel_site_yr, aes(x = state, y= newsnow_depth, color = state)) +
   geom_boxplot()+
-  ggtitle("Depth of increased SWE at all sites (1978-2022)")
+  ggtitle("Avg Depth of increased SWE at all sites (1978-2022)")
 ggplotly(spring_snow_depth)
 
 # Spring Snow depth
