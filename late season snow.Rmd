@@ -161,11 +161,11 @@ elev_newsnow
 
 elev_newsnow_depth <- plot_ly(cont_snotel_site, x = ~avg_spring_snow, y = ~elev, color = ~state, type = 'scatter', mode = 'markers', 
                         hoverinfo = 'text',
-                        text = ~paste('</br> avg_new_snow: ', avg_spring_snow,
+                        text = ~paste('</br> avg_new_SWE (mm): ', avg_spring_snow,
                                       '</br> elev: ', elev,
                                       '</br> site_name: ', site_name,
                                       '</br> state: ', state)) %>% 
-  layout(title = "Average Increased SWE Days by Elevation")
+  layout(title = "Average Increased SWE Depth (mm) by Elevation")
  
 elev_newsnow_depth
 
