@@ -101,7 +101,7 @@ load("data/PSZ_cont_snotel.RData")
 
 # PSZ SNOTEL Sites, Calculate spring days with new SWE and new SWE depth 
 # filter by date (March 1st - 60/61, March 15th - 74/75, April 1st - 91/92, April 15th - 105/106, August 1st - 243/244)
-start_year = 1979
+start_year = 2000
 start_day = 91
 end_day = 243
 
@@ -147,7 +147,7 @@ ggplotly(PSZ_spring_snow_days)
 #                             ifelse(elev < 2000 & elev >= 1200, "Mid (1500-2500)", "Low (<= 1500)")))
 ```
 
-```{r}
+```{r, fig.width=12,fig.height=7}
 # Elevation vs new snow count
 elev_newsnow <- plot_ly(PSZ_cont_snotel_site, x = ~med_spring_days, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
                         hoverinfo = 'text',
@@ -156,7 +156,7 @@ elev_newsnow <- plot_ly(PSZ_cont_snotel_site, x = ~med_spring_days, y = ~elev, c
                                       '</br> site_name: ', site_name,
                                       '</br> ecoregion: ', US_L3NAME,
                                       '</br> state: ', state)) %>% 
-  layout(title = "Average Increased SWE Days by Elevation")
+  layout(title = "Average Increased SWE Days After April 1st by Elevation (2000-2022)")
  
 elev_newsnow
 
@@ -167,7 +167,7 @@ elev_newsnow_depth <- plot_ly(PSZ_cont_snotel_site, x = ~med_newSWE, y = ~elev, 
                                       '</br> site_name: ', site_name,
                                       '</br> ecoregion: ', US_L3NAME,
                                       '</br> state: ', state)) %>% 
-  layout(title = "Average Increased SWE Depth (mm) by Elevation")
+  layout(title = "Average Increased SWE Depth (mm) After April 1st by Elevation (2000-2022)")
  
 elev_newsnow_depth
 ```
