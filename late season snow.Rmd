@@ -188,13 +188,13 @@ ggplotly(spring_snow_days)
 # Elevation vs new SWE count (March 1)
 elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_spring_days, y= elev, color = eco_sntl)) +
   geom_point() +
-  labs(title = "Average Number of Increased SWE Days After March 1st (2000-2022)", x = "Median Days of Increased SWE", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
+  labs(title = "Average Number of Increased SWE Days After April 1st (2000-2022)", x = "Median Days of Increased SWE", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
 ggplotly(elev_newsnow)
 
 # Elevation vs new SWE depth
 elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_newSWE, y= elev, color = eco_sntl)) +
   geom_point() +
-  labs(title = "Average Increase in SWE After March 1st (2000-2022)", x = "Median Depth of Increased SWE (mm)", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
+  labs(title = "Average Increase in SWE After April 1st (2000-2022)", x = "Median Depth of Increased SWE (mm)", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
 ggplotly(elev_newsnow)
 
 
