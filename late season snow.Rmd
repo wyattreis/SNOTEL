@@ -20,44 +20,24 @@ library(sf)
 ```
 
 ```{r, eval=FALSE, echo=FALSE}
-## Download SNOTEL
-
-# # Test SNOTEL Data Download/Save
-#snotel_test <- snotel_download(site_id = c(551, 301, 901), internal = TRUE)
-# 
-# save(snotel_test, file = "data/snotel_test.RData")
-
-# 
-# write.csv(snotel_551, "data/snotel_551.csv")
-# 
-# # Colorado SNOTEL Data
-# site_meta_data_co <- snotel_info() %>%
-#   filter(state == "CO")
-# # 
-# mapview(site_meta_data_co, ycol = "latitude", xcol = "longitude", crs = 4326, grid = FALSE)
-# 
-# co_snow_data <- snotel_download(site_id = site_meta_data_co$site_id, internal = TRUE)
-# 
-# write.csv(co_snow_data, "data/co_snotel.csv")
-# 
-# # Contiguous US Data 
+# Download all SNOTEL Data for Contiguous US
 # site_meta_data_cont <- snotel_info() %>%
-#   filter(state != "AK")
+#    filter(state != "AK")
 # 
-# mapview(site_meta_data_cont, ycol = "latitude", xcol = "longitude", crs = 4326, grid = FALSE)
+# #mapview(site_meta_data_cont, ycol = "latitude", xcol = "longitude", crs = 4326, grid = FALSE)
 # 
 # cont_snow_data <- snotel_download(site = site_meta_data_cont$site_id, internal = TRUE)
 # 
-# write.csv(cont_snow_data, "data/snotel_cont.csv")
+# save(cont_snow_data, file = "data/snotel_cont_data.RData")
 ```
 
 ```{r}
-# Import data from .RData
-load("data/cont_snotel.RData")
+# Import SNOTEL data 
+load("data/snotel_cont_data.RData")
 
 # Import seasonal snow zone polygons
 #SSZ <- st_read('data/MODIS_Snow_Zones/SSZ_0cc.shp')
-PSZ <- st_read('data/MODIS_Snow_Zones/PSZ_0cc.shp')
+PSZ <- st_read('data/MODIS_Snow_Zones/PSZ_0cc.shp') 
 eco_L3 <- st_read('data/eco_regions/us_eco_l3.shp')
 ```
 
@@ -78,6 +58,7 @@ PSZ_snotel_sites = st_intersection(PSZ_4326, snotel_sites)
 
 #Assign Eco Region Data
 PSZ_snotel_sites <- st_join(PSZ_snotel_sites, left = FALSE, eco_L3_4326[c("US_L3NAME", "US_L3CODE", "L3_KEY")])
+snotel_sites_eco <- st_join(snotel_sites, left = FALSE, eco_L3_4326[c("US_L3NAME", "US_L3CODE", "L3_KEY")])
 
 #Create Map of SNOTEL Sites based on persistent snow zone (PSZ)
 mapview(snotel_sites, col.regions = "red") +
@@ -85,89 +66,159 @@ mapview(snotel_sites, col.regions = "red") +
 ```
 
 ```{r, eval=FALSE, echo=FALSE}
-# # Filter all SNOTEL to PSZ SNOTEL Sites Only
-# PSZ_cont_snotel <- cont_snow_data[cont_snow_data$site_id %in% PSZ_snotel_sites$site_id,]
-# 
-# # Merge the eco regions with the rest of the data
-# PSZ_cont_snotel <- merge(PSZ_cont_snotel, PSZ_snotel_sites, by = c("site_id", "site_name", "state", "elev"))
-# 
-# # Save DF
-# save(PSZ_cont_snotel, file = "data/PSZ_cont_snotel.RData")
+# Filter all SNOTEL to PSZ SNOTEL Sites Only
+#PSZ_cont_snotel <- cont_snow_data[cont_snow_data$site_id %in% PSZ_snotel_sites$site_id,]
+
+# Merge the eco regions with the rest of the data
+#PSZ_cont_snotel <- merge(PSZ_cont_snotel, PSZ_snotel_sites, by = c("site_id", "site_name", "state", "elev"))
+#cont_snotel <- merge(cont_snow_data, snotel_sites_eco, by = c("site_id", "site_name", "state", "elev"))
+
+# Save DF
+#save(PSZ_cont_snotel, file = "data/PSZ_cont_snotel.RData")
+save(cont_snotel, file = "data/cont_snotel.RData")
 ```
 
 ```{r}
 # Import data from .RData
-load("data/PSZ_cont_snotel.RData")
-
-# PSZ SNOTEL Sites, Calculate spring days with new SWE and new SWE depth 
-# filter by date (March 1st - 60/61, March 15th - 74/75, April 1st - 91/92, April 15th - 105/106, August 1st - 243/244)
-start_year = 2000
-start_day = 91
-end_day = 243
-
-PSZ_cont_snotel_spring <- PSZ_cont_snotel %>%
-  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
-  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
-  filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= end_day, 
-                                                   yday >= start_day+1 & yday <= end_day+1)) %>% 
-  select(-c("X", "network", "description", "start", "end", "GRIDCODE", "Area"))
-
-# Determine number of days with increased SWE per spring at each site in the PSZ (YEARLY)
-PSZ_cont_snotel_site_yr <- PSZ_cont_snotel_spring %>%
-  group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
-  summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), 
-            newSWE = sum(newSWE, na.rm = TRUE))
-
-# Determine average number of days with increased SWE per spring at each site in the PSZ (SITE)
-PSZ_cont_snotel_site <- PSZ_cont_snotel_site_yr %>%
-  group_by(site_id, site_name, state, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
-  summarise(mean_spring_days = mean(newSWE_days), med_spring_days = median(newSWE_days),
-            mean_newSWE = mean(newSWE), med_newSWE = median(newSWE))
-
-# View data
-mapview(PSZ_cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "med_spring_days",
-        layer.name = "AVG Sping Days (PSZ Sites)" , crs = 4326, grid = FALSE) +
-  mapview(eco_L3_4326, zcol = "L3_KEY")
-```
-
-```{r, fig.width=12,fig.height=7}
-# Create a boxplot of increased SWE for all sites based on ecoregion
-PSZ_spring_snow_days <- ggplot(PSZ_cont_snotel_site_yr, aes(x = US_L3CODE, y= newSWE_days, color = L3_KEY)) +
-  geom_boxplot()+
-  ggtitle("Days of increased SWE at PSZ sites (1978-2022)")
-ggplotly(PSZ_spring_snow_days)
+#load("data/PSZ_cont_snotel.RData")
+load("data/cont_snotel.RData")
 ```
 
 ```{r}
-# summary(cont_snotel_site_yr$elev)
-# hist(cont_snotel_site_yr$elev)
-# 
-# cont_snotel_site_yr <- cont_snotel_site_yr %>% 
-#   mutate(elev_band = ifelse(elev >= 2000, "High (>=2500)", 
-#                             ifelse(elev < 2000 & elev >= 1200, "Mid (1500-2500)", "Low (<= 1500)")))
+# Count the number of the 
+eco_sntl_sites <- cont_snotel %>% 
+  group_by(US_L3NAME) %>% 
+  summarize(eco_sntl_sites = n_distinct(site_id)) %>% 
+  filter(eco_sntl_sites >= 5)
+
+# All SNOTEL Sites, Calculate spring days with new SWE and new SWE depth 
+# filter by date (March 1st - 60/61, March 15th - 74/75, April 1st - 91/92, April 15th - 105/106, August 1st - 243/244)
+# Filter data by date from 2000 to present and from March 1st to August 1st
+# group by year and site
+start_year = 2000
+start_day = 60 #March 1
+cont_snotel_spring_mar1 <- cont_snotel %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
+  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= 243, 
+                                                   yday >= start_day+1 & yday <= 243+1)) %>% 
+  select(-c("X", "network", "description", "start", "end"))
+
+start_day = 74 #March 15
+cont_snotel_spring_mar15 <- cont_snotel %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
+  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= 243, 
+                                                   yday >= start_day+1 & yday <= 243+1)) %>% 
+  select(-c("X", "network", "description", "start", "end"))
+
+start_day = 91 #April 1
+cont_snotel_spring_apr1 <- cont_snotel %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
+  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= 243, 
+                                                   yday >= start_day+1 & yday <= 243+1)) %>% 
+  select(-c("X", "network", "description", "start", "end"))
+
+start_day = 105 #April 15
+cont_snotel_spring_apr15 <- cont_snotel %>%
+  mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
+  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent)+3, snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= 243, 
+                                                   yday >= start_day+1 & yday <= 243+1)) %>% 
+  select(-c("X", "network", "description", "start", "end"))
+```
+
+```{r}
+# Determine number of days with increased SWE per spring at each site (YEARLY - March 1)
+cont_snotel_site_yr_mar1 <- cont_snotel_spring_mar1 %>%
+  group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
+  summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
+  merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
+  mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "3/1")
+
+# Determine number of days with increased SWE per spring at each site (YEARLY - March 15)
+cont_snotel_site_yr_mar15 <- cont_snotel_spring_mar15 %>%
+  group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
+  summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
+  merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
+  mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "3/15")
+
+# Determine number of days with increased SWE per spring at each site (YEARLY - April 1)
+cont_snotel_site_yr_apr1 <- cont_snotel_spring_apr1 %>%
+  group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
+  summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
+  merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
+  mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "4/1")
+
+# Determine number of days with increased SWE per spring at each site (YEARLY - April 1)
+cont_snotel_site_yr_apr15 <- cont_snotel_spring_apr15 %>%
+  group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
+  summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
+  merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
+  mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "4/15")
+
+# Merge the DF's into one large datafame for plotting
+cont_snotel_site_yr <- rbind(cont_snotel_site_yr_mar1, cont_snotel_site_yr_mar15, cont_snotel_site_yr_apr1, cont_snotel_site_yr_apr15)
+
+# Determine average number of days with increased SWE per spring at each site in the PSZ (SITE - March 1)
+cont_snotel_site_apr1 <- cont_snotel_site_yr_apr1 %>%
+  group_by(site_id, site_name, state, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY, eco_sntl_sites, eco_sntl) %>%
+  summarise(mean_spring_days = mean(newSWE_days), med_spring_days = median(newSWE_days),
+            mean_newSWE = mean(newSWE), med_newSWE = median(newSWE))
+```
+
+```{r}
+# # View data
+# mapview(PSZ_cont_snotel_site, ycol = "latitude", xcol = "longitude", zcol = "med_spring_days",
+#         layer.name = "AVG Sping Days (PSZ Sites)" , crs = 4326, grid = FALSE) +
+#   mapview(eco_L3_4326, zcol = "L3_KEY")
 ```
 
 ```{r, fig.width=12,fig.height=7}
-# Elevation vs new snow count
-elev_newsnow <- plot_ly(PSZ_cont_snotel_site, x = ~med_spring_days, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
-                        hoverinfo = 'text',
-                        text = ~paste('</br> median new days: ', med_spring_days,
-                                      '</br> elev: ', elev,
-                                      '</br> site_name: ', site_name,
-                                      '</br> ecoregion: ', US_L3NAME,
-                                      '</br> state: ', state)) %>% 
-  layout(title = "Average Increased SWE Days After April 1st by Elevation (2000-2022)")
- 
-elev_newsnow
 
-elev_newsnow_depth <- plot_ly(PSZ_cont_snotel_site, x = ~med_newSWE, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
-                        hoverinfo = 'text',
-                        text = ~paste('</br> median new SWE (mm): ', med_newSWE,
-                                      '</br> elev: ', elev,
-                                      '</br> site_name: ', site_name,
-                                      '</br> ecoregion: ', US_L3NAME,
-                                      '</br> state: ', state)) %>% 
-  layout(title = "Average Increased SWE Depth (mm) After April 1st by Elevation (2000-2022)")
- 
-elev_newsnow_depth
+spring_snow_days <- ggplot(cont_snotel_site_yr, aes(x = US_L3CODE, y= newSWE_days, color = eco_sntl)) +
+  geom_boxplot() +
+  facet_wrap(~start) +
+  labs(title = "Days of increased SWE at SNOTEL Sites (2000-2022)", x = "L3 Ecoregion Number", y = "Days of Increased SWE", color = "Ecoregions (Number of SNOTEL Sites)") 
+ggplotly(spring_snow_days)
+```
+
+```{r, fig.width=12,fig.height=7}
+# Elevation vs new SWE count (March 1)
+elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_spring_days, y= elev, color = eco_sntl)) +
+  geom_point() +
+  labs(title = "Average Number of Increased SWE Days After March 1st (2000-2022)", x = "Median Days of Increased SWE", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
+ggplotly(elev_newsnow)
+
+# Elevation vs new SWE depth
+elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_newSWE, y= elev, color = eco_sntl)) +
+  geom_point() +
+  labs(title = "Average Increase in SWE After March 1st (2000-2022)", x = "Median Depth of Increased SWE (mm)", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
+ggplotly(elev_newsnow)
+
+
+
+
+# elev_newsnow <- plot_ly(cont_snotel_site, x = ~med_spring_days, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
+#                         hoverinfo = 'text',
+#                         text = ~paste('</br> median new days: ', med_spring_days,
+#                                       '</br> elev: ', elev,
+#                                       '</br> site_name: ', site_name,
+#                                       '</br> ecoregion: ', US_L3NAME,
+#                                       '</br> state: ', state)) %>% 
+#   layout(title = "Average Increased SWE Days After April 1st by Elevation (2000-2022)")
+#  
+# elev_newsnow
+
+# elev_newsnow_depth <- plot_ly(PSZ_cont_snotel_site, x = ~med_newSWE, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
+#                         hoverinfo = 'text',
+#                         text = ~paste('</br> median new SWE (mm): ', med_newSWE,
+#                                       '</br> elev: ', elev,
+#                                       '</br> site_name: ', site_name,
+#                                       '</br> ecoregion: ', US_L3NAME,
+#                                       '</br> state: ', state)) %>% 
+#   layout(title = "Average Increased SWE Depth (mm) After April 1st by Elevation (2000-2022)")
+#  
+# elev_newsnow_depth
 ```
