@@ -18,6 +18,8 @@ library(plotly)
 library(sf)
 library(ggpubr)
 library(cowplot)
+library(RColorBrewer)
+library(rstatix)
 ```
 
 ```{r, eval=FALSE, echo=FALSE}
@@ -30,11 +32,15 @@ library(cowplot)
 # cont_snow_data <- snotel_download(site = site_meta_data_cont$site_id, internal = TRUE)
 # 
 # save(cont_snow_data, file = "data/snotel_cont_data.RData")
+
+#JW_sntl <- snotel_download(site_id = 551, internal = T)
 ```
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 # Import SNOTEL data 
 load("data/snotel_cont_data.RData")
+
+
 
 # Import seasonal snow zone polygons
 #SSZ <- st_read('data/MODIS_Snow_Zones/SSZ_0cc.shp')
@@ -42,7 +48,7 @@ PSZ <- st_read('data/MODIS_Snow_Zones/PSZ_0cc.shp')
 eco_L3 <- st_read('data/eco_regions/us_eco_l3.shp')
 ```
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 # Group sites by site_id
 cont_snotel_site <- cont_snow_data %>%
   group_by(site_id, site_name, state, latitude, longitude, elev) %>%
@@ -86,7 +92,7 @@ load("data/cont_snotel.RData")
 ```
 
 ```{r}
-# Count the number of the 
+# Count the number of SNOTEL Sites per Ecoregion
 eco_sntl_sites <- cont_snotel %>% 
   group_by(US_L3NAME) %>% 
   summarize(eco_sntl_sites = n_distinct(site_id)) %>% 
@@ -116,7 +122,9 @@ start_year = 2000
 start_day = 91 #April 1
 cont_snotel_spring_apr1 <- cont_snotel %>%
   mutate(date = as.POSIXct(date, format = "%Y-%m-%d"),yday = yday(date), year = year(date)) %>%
-  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent), snow_water_equivalent-lag(snow_water_equivalent), 0)) %>%
+  mutate(newSWE = ifelse(snow_water_equivalent>lag(snow_water_equivalent),
+                         snow_water_equivalent-lag(snow_water_equivalent), 0),
+         newSWE = ifelse(temperature_min > 0, 0, newSWE)) %>%
   filter(state != "SD", year >= start_year, ifelse(leap_year(year) == FALSE, yday >= start_day & yday <= 243, 
                                                    yday >= start_day+1 & yday <= 243+1)) %>% 
   select(-c("X", "network", "description", "start", "end"))
@@ -152,7 +160,7 @@ cont_snotel_site_yr_apr1 <- cont_snotel_spring_apr1 %>%
   merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
   mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "4/1") 
 
-# # Determine number of days with increased SWE per spring at each site (YEARLY - April 1)
+# # Determine number of days with increased SWE per spring at each site (YEARLY - April 15)
 # cont_snotel_site_yr_apr15 <- cont_snotel_spring_apr15 %>%
 #   group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
 #   summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
@@ -183,26 +191,76 @@ spring_snow_days <- ggplot(cont_snotel_site_yr_apr1, aes(x = reorder(US_L3CODE,n
   geom_boxplot() +
   labs(x = "EPA Level III Ecoregion", y = "Days of Increased SWE", fill = "") +
   scale_y_continuous(breaks = seq(0,50,10), limits = c(0,50), expand = c(0.01, 0.01)) +
+  scale_x_discrete(labels = function(eco_sntl) str_wrap(eco_sntl, width = 28)) +
   theme_bw()
-#spring_snow_days
+spring_snow_days
 
 ggplotly(spring_snow_days)
 
 #ggplot_build(spring_snow_days)$data
 
+# Pairwise comparison of all sites
+stat.test <- cont_snotel_site_yr_apr1 %>%
+  mutate(US_L3CODE = as.numeric(US_L3CODE)) %>% 
+  arrange(US_L3CODE) %>% 
+  pairwise_t_test(newSWE_days ~ US_L3CODE, p.adjust.method = "bonferroni") %>% 
+  add_significance(cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 1),
+                   symbols = c("****", "***", "**", "*", "ns"))
+  
+level1 = c(4,5,9,11,13,15,16,17,18,19,21,23,41,77,80)
+level2 = c(5,9,11,13,15,16,17,18,19,21,23,41,77,80)
+
+pairwise_plot <- ggplot(stat.test, aes(x = factor(group1, levels = level1),
+                                       y = factor(group2, levels = level2),
+                                       fill = p.adj.signif))+
+  geom_tile(col = "black") +
+  scale_fill_brewer(labels = c("1e-04", "0.001", "0.01", "0.05", "ns"), 
+                    palette = "Reds", direction = -1)+
+  labs(y = "EPA Level III Ecoregion", x = "EPA Level III Ecoregion", fill = "Sig. Level") +
+  theme_bw()
+
+pairwise_plot
+
+ggplotly(pairwise_plot)
+
+
+#test <- ggplot_build(pairwise_plot)$data[[1]]
+
+# boxplot and pairwise 
+plots <- plot_grid(
+  spring_snow_days + theme(legend.position="none"),
+  pairwise_plot,
+  align = 'vh',
+  labels = c("a.", "b."),
+  hjust = -0.4,
+  nrow = 1)
+
+plots
+
+legend <- get_legend(spring_snow_days + guides(fill = guide_legend(nrow = 5)) +
+               theme(legend.direction = "horizontal",
+                     legend.justification="center",
+                     legend.box.just = "bottom"))
+
+plot_grid(plots, legend, ncol = 1, rel_heights = c(1, .3))
+
 # Elevation vs new SWE count (March 1)
 elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_spring_days, y= elev, 
                                                   color = reorder(eco_sntl,med_spring_days,na.rm = TRUE))) +
   geom_point() +
+  geom_smooth(method = "lm")+
+  stat_smooth(method = "lm", col = "black")+
   labs(x = "Median Days of Increased SWE", y = "Elevation (m)", color = "") +
   scale_x_continuous(breaks = seq(0,30,10), limits = c(0,30), expand = c(0.01, 0.01)) +
   scale_y_continuous(breaks = seq(500,4000,1000), limits = c(500,3750), expand = c(0.01, 0.01)) +
-  scale_color_manual(values=c("#F8766D", "#E58700", "#C99800", "#A3A500", "#6BB100",
-                              "#00BA38", "#00BF7D", "#00C0AF", "#00BCD8", "#00B0F6",
-                              "#619CFF", "#B983FF", "#E76BF3", "#FF67A4", "#FD61D1")) +
+  scale_color_manual(values=c("#F8766D", "#C99800", "#E58700",  "#A3A500", "#6BB100",
+                              "#00BA38", "#00BF7D", "#00C0AF", "#00B0F6", "#619CFF",  
+                              "#B983FF", "#00BCD8", "#E76BF3", "#FF67A4", "#FD61D1")) +
   theme_bw()
-#elev_newsnow
+elev_newsnow
 ggplotly(elev_newsnow)
+
+#ggplot_build(elev_newsnow)$data
 
 plot <- plot_grid(
   spring_snow_days + theme(legend.position="none"),
@@ -220,32 +278,81 @@ legend <- get_legend(spring_snow_days + guides(fill = guide_legend(nrow = 5)) +
                      legend.box.just = "bottom"))
 
 plot_grid(plot, legend, ncol = 1, rel_heights = c(1, .3))
+```
 
-# # Elevation vs new SWE depth
-# elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_newSWE, y= elev, color = eco_sntl)) +
-#   geom_point() +
-#   labs(title = "Average Increase in SWE After April 1st (2000-2022)", x = "Median Depth of Increased SWE (mm)", y = "Elevation (m)", color = "Ecoregions (Number of SNOTEL Sites)")
-# ggplotly(elev_newsnow)
+```{r}
+#Determine the number of SWE events above a temperature threshold
+summary_stats <- cont_snotel_spring_apr1 %>%
+  #filter(site_id == "1000" & (date >= "2001-04-01" & date <= "2001-04-15")) %>% 
+  summarise(n_above_mean = sum(newSWE > 0 & temperature_mean > 0, na.rm = TRUE), 
+            n_above_min = sum(newSWE > 0 & temperature_min > 0, na.rm = TRUE),
+            n_below_mean = sum(newSWE > 0 & temperature_mean <= 0, na.rm = TRUE), 
+            n_below_min = sum(newSWE > 0 & temperature_min <=0, na.rm = TRUE),
+            n_newSWE = sum(newSWE > 0, na.rm = TRUE),
+            n = n())
 
-# elev_newsnow <- plot_ly(cont_snotel_site, x = ~med_spring_days, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
-#                         hoverinfo = 'text',
-#                         text = ~paste('</br> median new days: ', med_spring_days,
-#                                       '</br> elev: ', elev,
-#                                       '</br> site_name: ', site_name,
-#                                       '</br> ecoregion: ', US_L3NAME,
-#                                       '</br> state: ', state)) %>% 
-#   layout(title = "Average Increased SWE Days After April 1st by Elevation (2000-2022)")
-#  
-# elev_newsnow
+above_min_pct = summary_stats$n_above_min/(summary_stats$n_newSWE)
+```
 
-# elev_newsnow_depth <- plot_ly(PSZ_cont_snotel_site, x = ~med_newSWE, y = ~elev, color = ~US_L3NAME, type = 'scatter', mode = 'markers', 
-#                         hoverinfo = 'text',
-#                         text = ~paste('</br> median new SWE (mm): ', med_newSWE,
-#                                       '</br> elev: ', elev,
-#                                       '</br> site_name: ', site_name,
-#                                       '</br> ecoregion: ', US_L3NAME,
-#                                       '</br> state: ', state)) %>% 
-#   layout(title = "Average Increased SWE Depth (mm) After April 1st by Elevation (2000-2022)")
-#  
-# elev_newsnow_depth
+```{r eval = FALSE, echo=FALSE}
+# Linear Regresion and R^2
+overall_model <- lm(med_spring_days~elev, data = cont_snotel_site_apr1)
+
+overall_model
+
+regional_models <- cont_snotel_site_apr1 %>%
+  split(.$eco_sntl) %>%
+  purrr::map(~lm(med_spring_days~elev, data = .)) %>%
+  purrr::map(summary)# %>%
+  purrr::map_dbl("adj.r.squared")
+
+regional_models
+```
+
+```{r eval = FALSE, echo=FALSE}
+# pairwise comparisons
+
+library(pairwiseComparisons)
+library(ggstatsplot)
+library(emmeans)
+library(RColorBrewer)
+display.brewer.all()
+
+sntl_swe_eco <- cont_snotel_site_yr_apr1 %>%
+  select(c(9,11))
+
+
+pairwise <- cont_snotel_site_yr_apr1 %>% 
+  group_by(eco_sntl) %>% 
+  summarise(
+    n  = n(),
+    mean = mean(newSWE_days),
+    sd = sd(newSWE_days)
+  )
+
+pairwise <- pairwise_comparisons(cont_snotel_site_yr_apr1, eco_sntl, newSWE_days)
+
+plot_pairwise_comparisons(
+  pairwise,
+  type = c("pval"),
+  smaller_is_good = TRUE
+)
+
+stat.test <- cont_snotel_site_yr_apr1 %>%
+  mutate(US_L3CODE = as.numeric(US_L3CODE)) %>% 
+  arrange(US_L3CODE) %>% 
+  #mutate(US_L3CODE = as.character(US_L3CODE)) %>% 
+  pairwise_t_test(newSWE_days ~ US_L3CODE, p.adjust.method = "bonferroni")# %>%
+  select(-c(.y.,statistic, df))
+  
+level1 = c(4,5,9,11,13,15,16,17,18,19,21,23,41,77,80)
+level2 = c(5,9,11,13,15,16,17,18,19,21,23,41,77,80)
+
+pairwise_plot <- ggplot(stat.test, aes(x = factor(group1, levels = level1),y = factor(group2, levels = level2), fill = p.adj.signif))+
+  geom_tile(col = "black")
+
+#ggplot(stat.test, aes(x = group1,y = group2, fill = p.adj.signif))+
+  #geom_tile(col = "black")
+
+
 ```
