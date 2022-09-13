@@ -94,7 +94,7 @@ load("data/cont_snotel.RData")
 ```{r}
 # Count the number of SNOTEL Sites per Ecoregion
 eco_sntl_sites <- cont_snotel %>% 
-  group_by(US_L3NAME) %>% 
+  group_by(US_L3NAME, US_L3CODE) %>% 
   summarize(eco_sntl_sites = n_distinct(site_id)) %>% 
   filter(eco_sntl_sites >= 5)
 
@@ -157,8 +157,12 @@ cont_snotel_spring_apr1 <- cont_snotel %>%
 cont_snotel_site_yr_apr1 <- cont_snotel_spring_apr1 %>%
   group_by(site_id, site_name, state, year, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY) %>%
   summarise(newSWE_days = sum(newSWE>0, na.rm = TRUE), newSWE = sum(newSWE, na.rm = TRUE)) %>% 
-  merge(., eco_sntl_sites, by = c("US_L3NAME")) %>% 
+  merge(., eco_sntl_sites, by = c("US_L3NAME", "US_L3CODE")) %>% 
   mutate(eco_sntl = paste0(L3_KEY, ' (N = ', eco_sntl_sites, ')'), start = "4/1") 
+
+eco_sntl_sites_med <- cont_snotel_site_yr_apr1 %>% 
+  group_by(eco_sntl) %>% 
+  summarize(median_spring_SWE = median(newSWE_days, na.rm = T))
 
 # # Determine number of days with increased SWE per spring at each site (YEARLY - April 15)
 # cont_snotel_site_yr_apr15 <- cont_snotel_spring_apr15 %>%
@@ -174,7 +178,8 @@ cont_snotel_site_yr_apr1 <- cont_snotel_spring_apr1 %>%
 cont_snotel_site_apr1 <- cont_snotel_site_yr_apr1 %>%
   group_by(site_id, site_name, state, latitude, longitude, elev, US_L3CODE, US_L3NAME, L3_KEY, eco_sntl_sites, eco_sntl) %>%
   summarise(mean_spring_days = mean(newSWE_days), med_spring_days = median(newSWE_days),
-            mean_newSWE = mean(newSWE), med_newSWE = median(newSWE))
+            mean_newSWE = mean(newSWE), med_newSWE = median(newSWE)) %>% 
+  merge(.,eco_sntl_sites_med, by = "eco_sntl")
 ```
 
 ```{r}
@@ -186,8 +191,8 @@ cont_snotel_site_apr1 <- cont_snotel_site_yr_apr1 %>%
 
 ```{r, fig.width=12,fig.height=7}
 # Spring SWE increases (After April 1)
-spring_snow_days <- ggplot(cont_snotel_site_yr_apr1, aes(x = reorder(US_L3CODE,newSWE_days,na.rm = TRUE), y= newSWE_days, 
-                                                         fill = reorder(eco_sntl,newSWE_days,na.rm = TRUE))) +
+spring_snow_days <- ggplot(cont_snotel_site_yr_apr1, aes(x = reorder(US_L3CODE,newSWE_days,FUN = median, na.rm = TRUE), y= newSWE_days, 
+                                                         fill = reorder(eco_sntl,newSWE_days,FUN = median,na.rm = TRUE))) +
   geom_boxplot() +
   labs(x = "EPA Level III Ecoregion", y = "Days of Increased SWE", fill = "") +
   scale_y_continuous(breaks = seq(0,50,10), limits = c(0,50), expand = c(0.01, 0.01)) +
@@ -197,7 +202,7 @@ spring_snow_days
 
 ggplotly(spring_snow_days)
 
-#ggplot_build(spring_snow_days)$data
+ggplot_build(spring_snow_days)$data
 
 # Pairwise comparison of all sites
 stat.test <- cont_snotel_site_yr_apr1 %>%
@@ -246,16 +251,13 @@ plot_grid(plots, legend, ncol = 1, rel_heights = c(1, .3))
 
 # Elevation vs new SWE count (March 1)
 elev_newsnow <- ggplot(cont_snotel_site_apr1, aes(x = med_spring_days, y= elev, 
-                                                  color = reorder(eco_sntl,med_spring_days,na.rm = TRUE))) +
+                                                  color = reorder(eco_sntl,median_spring_SWE,na.rm = TRUE))) +
   geom_point() +
-  geom_smooth(method = "lm")+
-  stat_smooth(method = "lm", col = "black")+
+  #geom_smooth(method = "lm")+
+  #stat_smooth(method = "lm", col = "black")+
   labs(x = "Median Days of Increased SWE", y = "Elevation (m)", color = "") +
   scale_x_continuous(breaks = seq(0,30,10), limits = c(0,30), expand = c(0.01, 0.01)) +
   scale_y_continuous(breaks = seq(500,4000,1000), limits = c(500,3750), expand = c(0.01, 0.01)) +
-  scale_color_manual(values=c("#F8766D", "#C99800", "#E58700",  "#A3A500", "#6BB100",
-                              "#00BA38", "#00BF7D", "#00C0AF", "#00B0F6", "#619CFF",  
-                              "#B983FF", "#00BCD8", "#E76BF3", "#FF67A4", "#FD61D1")) +
   theme_bw()
 elev_newsnow
 ggplotly(elev_newsnow)
